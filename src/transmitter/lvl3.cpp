@@ -18,9 +18,15 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 SX1276 radio = new Module(LORA_CS, LORA_DIO0, LORA_RST, LORA_DIO1);
 
 const float FREQUENCY = 923.0;
-const float BITRATE = 15.2;   // кбіт/с
-const float FREQ_DEV = 15.2;  // кГц
-const float RX_BW = 125.0;    // кГц
+// --- СТАРІ ЗНАЧЕННЯ (15.2 kbps) ---
+// const float BITRATE = 15.2;   // кбіт/с
+// const float FREQ_DEV = 15.2;  // кГц
+// const float RX_BW = 125.0;    // кГц
+
+// --- НОВІ ЗНАЧЕННЯ (100 kbps) ---
+const float BITRATE = 100.0;   // 100 кбіт/с
+const float FREQ_DEV = 100.0;  // 100 кГц (відхилення частоти має відповідати бітрейту)
+const float RX_BW = 250.0;    // кГц (розширюємо полосу прийому, щоб вмістити ширший сигнал)
 const int8_t TX_POWER = 5;
 
 uint8_t payload[64];
