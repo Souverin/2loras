@@ -12,10 +12,16 @@
 // Створення об'єкта модуля SX1276 через RadioLib
 SX1276 radio = new Module(LORA_CS, LORA_DIO0, RST, LORA_DIO1);
 
-enum ButtonEvent {
+enum ButtonEventType {
   EVENT_NONE,
   EVENT_SINGLE_CLICK,
   EVENT_DOUBLE_CLICK
+};
+
+// Структура події, яка містить тип та час натискання
+struct ButtonMessage {
+  ButtonEventType type;
+  unsigned long pressTimestampMs; // Мітка часу в мілісекундах (millis)
 };
 
 QueueHandle_t buttonQueue;
@@ -30,6 +36,7 @@ void vButtonTask(void *pvParameters) {
 
   bool lastState = HIGH;
   TickType_t lastPressTime = 0;
+  unsigned long initialPressTimestamp = 0;
   int clickCount = 0;
 
   for (;;) {
@@ -43,6 +50,7 @@ void vButtonTask(void *pvParameters) {
           clickCount++;
         } else {
           clickCount = 1;
+          initialPressTimestamp = millis();
         }
         lastPressTime = now;
       }
@@ -50,8 +58,10 @@ void vButtonTask(void *pvParameters) {
     lastState = currentState;
 
     if (clickCount > 0 && (xTaskGetTickCount() - lastPressTime > doubleClickDelay)) {
-      ButtonEvent eventToSend = (clickCount == 1) ? EVENT_SINGLE_CLICK : EVENT_DOUBLE_CLICK;
-      xQueueSend(buttonQueue, &eventToSend, portMAX_DELAY);
+      ButtonMessage msg;
+      msg.type = (clickCount == 1) ? EVENT_SINGLE_CLICK : EVENT_DOUBLE_CLICK;
+      msg.pressTimestampMs = initialPressTimestamp;
+      xQueueSend(buttonQueue, &msg, portMAX_DELAY);
       clickCount = 0;
     }
     vTaskDelay(pdMS_TO_TICKS(20));
@@ -62,22 +72,26 @@ void vButtonTask(void *pvParameters) {
 // 2. RADIO TASK (RadioLib)
 // ---------------------------------------------------------
 void vRadioTask(void *pvParameters) {
-  ButtonEvent receivedEvent;
+  ButtonMessage receivedMsg;
 
   for (;;) {
-    if (xQueueReceive(buttonQueue, &receivedEvent, portMAX_DELAY) == pdPASS) {
+    if (xQueueReceive(buttonQueue, &receivedMsg, portMAX_DELAY) == pdPASS) {
       String message = "";
+      unsigned long nowMs = millis();
+      unsigned long latencyMs = nowMs - receivedMsg.pressTimestampMs;
 
-      if (receivedEvent == EVENT_SINGLE_CLICK) {
+      if (receivedMsg.type == EVENT_SINGLE_CLICK) {
         message = "BUTTON SINGLE";
-      } else if (receivedEvent == EVENT_DOUBLE_CLICK) {
+      } else if (receivedMsg.type == EVENT_DOUBLE_CLICK) {
         message = "BUTTON DOUBLE";
       }
 
-      Serial.print("[Radio Task] Transmitting via RadioLib: ");
-      Serial.print(message);
-      Serial.print(" ... ");
 
+      Serial.printf(
+        "[Radio Task] Sending '%s' (Latency: %lu ms) via RadioLib... ",
+        message.c_str(),
+        latencyMs
+      );
       // Відправка пакета через RadioLib
       int state = radio.transmit(message);
 
@@ -110,7 +124,7 @@ void setup() {
   }
 
   // Створення черги
-  buttonQueue = xQueueCreate(5, sizeof(ButtonEvent));
+  buttonQueue = xQueueCreate(5, sizeof(ButtonMessage));
 
   // Створення задач
   xTaskCreate(vButtonTask, "Button Task", 2048, NULL, 2, NULL);
